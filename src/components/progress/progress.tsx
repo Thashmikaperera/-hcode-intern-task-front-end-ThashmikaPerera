@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FaEdit, FaTrash } from 'react-icons/fa';
+import {progressService} from '../../service/ProgressService';
+import { ProgressModel } from '../../models/ProgressModel';
 
 // Define the Progress interface
 interface Progress {
+  id: number;
+  userId: number;
   weight: string;
   date: Date | null;
   goals: string;
@@ -12,12 +16,36 @@ const ProgressComponent = () => {
   const [progress, setProgress] = useState<Progress[]>([]);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [newProgress, setNewProgress] = useState<Progress>({
+    id: 0,
+    userId: 0,
     weight: '',
     date: null,
     goals: ''
   });
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null); // State for error message
+
+  const progress1: ProgressModel = {
+    userId: 0,
+    weight: '',
+    goals: '',
+    date: ''
+  }
+
+  useEffect(() => {
+    const fetchProgresses = async () => {
+      try {
+        const response = await progressService.getProgresses(newProgress.weight, newProgress.goals);
+        console.log(response);
+        setProgress(response);
+        console.log(progress);
+      } catch (err) {
+        setError('Failed to fetch workouts');
+      }
+    };
+
+    fetchProgresses();
+  }, []);
 
   // Handle input changes in form
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,8 +59,19 @@ const ProgressComponent = () => {
     }
   };
 
+  const fetchProgresses = async () => {
+    try {
+      const response = await progressService.getProgresses(newProgress.weight, newProgress.goals);
+      console.log(response);
+      setProgress(response);
+      console.log(progress);
+    } catch (err) {
+      setError('Failed to fetch workouts');
+    }
+  };
+
   // Handle form submission for adding or editing progress
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     // Validate inputs
@@ -42,18 +81,51 @@ const ProgressComponent = () => {
 
     if (editIndex !== null) {
       // Update existing progress
-      const updatedProgress = progress.map((item, index) =>
-        index === editIndex ? newProgress : item
-      );
+      // const updatedProgress = progress.map((item, index) =>
+      //   index === editIndex ? newProgress : item
+      // );
+      const updatedProgress = await Promise.all(progress.map(async (item, index) => {
+        if (index === editIndex) {
+          const updatedProgress = {
+            ...item,
+            weight: newProgress.weight,
+            date: newProgress.date ? newProgress.date.toISOString() : '',
+            goals: newProgress.goals,
+            userId: parseInt(localStorage.getItem('userId') || '0')
+          };
+          await progressService.updateWorkout(updatedProgress, item.id);
+        }
+        return item;
+      }));
       setProgress(updatedProgress);
       setEditIndex(null);
     } else {
       // Add new progress
       setProgress([...progress, newProgress]);
+
+      try{
+        console.log("workOuts",newProgress);
+
+        progress1.weight=newProgress.weight;
+        progress1.goals=newProgress.goals;
+        progress1.date=newProgress.date?.toISOString() || '';
+        console.log("userId",localStorage.getItem('userId'));
+        progress1.userId=parseInt(localStorage.getItem('userId') || '0');
+
+        console.log('progress1',progress1);
+
+        let workOutModelPromise=await progressService.saveWorkout(progress1);
+        if (!workOutModelPromise) {
+          throw new Error('Failed to save workout');
+        }
+        console.log(workOutModelPromise);
+      }catch(error){
+        console.error('Failed to save user:', error);
+      }
     }
 
     // Reset form
-    setNewProgress({ weight: '', date: null, goals: '' });
+    setNewProgress({id: 0, userId: 0, weight: '', date: null, goals: '' });
     setIsFormVisible(false);
     setError(null); // Reset error message
   };
@@ -90,9 +162,11 @@ const ProgressComponent = () => {
   };
 
   // Handle deleting a progress entry
-  const handleDelete = (index: number) => {
+  const handleDelete = async (index: number) => {
     const updatedProgress = progress.filter((_, i) => i !== index);
     setProgress(updatedProgress);
+    await progressService.deleteWorkout(index);
+    fetchProgresses();
   };
 
   return (
@@ -126,8 +200,8 @@ const ProgressComponent = () => {
             <tr key={index}>
               <td className="border border-gray-300 px-4 py-2">{item.weight}</td>
               <td className="border border-gray-300 px-4 py-2">
-                {item.date ? item.date.toLocaleDateString() : 'N/A'}
-              </td>
+                  {item.date ? new Date(item.date).toDateString() : ''}
+                </td>
               <td className="border border-gray-300 px-4 py-2">{item.goals}</td>
               <td className="border border-gray-300 px-4 py-2 flex space-x-2">
                 <button onClick={() => handleEdit(index)}>
