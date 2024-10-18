@@ -1,22 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect  } from 'react';
 import { FaEdit, FaTrash } from 'react-icons/fa';
+import {workoutService} from '../../service/WorkoutService';
+import { WorkoutModel } from '../../models/Workoutmodel';
 
 // Define the Workout interface
 interface Workout {
+  id: number;
   type: string;
   duration: string;
   calories: string;
   date: string;
+  userId?: number;
 }
 
 const Workout = () => {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [newWorkout, setNewWorkout] = useState<Workout>({
+    id: 0,
     type: '',
     duration: '',
     calories: '',
-    date: ''
+    date: '',
+    userId: 0
   });
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +30,36 @@ const Workout = () => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setNewWorkout({ ...newWorkout, [name]: value });
+  };
+
+  useEffect(() => {
+    const fetchWorkouts = async () => {
+      try {
+        const response = await workoutService.getWorkouts(newWorkout.date, newWorkout.type);
+        setWorkouts(response);
+      } catch (err) {
+        setError('Failed to fetch workouts');
+      }
+    };
+
+    fetchWorkouts();
+  }, []);
+
+  const workout: WorkoutModel = {
+    userId: 0,
+    type: '',
+    duration: '',
+    calories: '',
+    date: ''
+  }
+
+  const fetchWorkouts = async () => {
+    try {
+      const response = await workoutService.getWorkouts(newWorkout.date, newWorkout.type);
+      setWorkouts(response);
+    } catch (err) {
+      setError('Failed to fetch workouts');
+    }
   };
 
   const validateInputs = (): boolean => {
@@ -50,7 +86,7 @@ const Workout = () => {
     return true;
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (!validateInputs()) {
@@ -59,29 +95,62 @@ const Workout = () => {
 
     if (editIndex !== null) {
       // Update existing workout
-      const updatedWorkouts = workouts.map((workout, index) =>
-        index === editIndex ? newWorkout : workout
-      );
+      const updatedWorkouts = await Promise.all(workouts.map(async (workout, index) => {
+        if (index === editIndex) {
+          const updatedWorkout = {
+            ...workout,
+            type: newWorkout.type,
+            duration: newWorkout.duration,
+            calories: newWorkout.calories,
+            date: newWorkout.date,
+            userId: parseInt(localStorage.getItem('userId') || '0')
+          };
+          await workoutService.updateWorkout(updatedWorkout, workouts[index].id);
+          return updatedWorkout;
+        }
+        return workout;
+      }));
+
       setWorkouts(updatedWorkouts);
       setEditIndex(null);
     } else {
       // Add new workout
       setWorkouts([...workouts, newWorkout]);
+      try{
+        console.log("workOuts",newWorkout);
+
+        workout.type=newWorkout.type;
+        workout.duration=newWorkout.duration;
+        workout.calories=newWorkout.calories;
+        workout.date=newWorkout.date;
+        console.log("userId",localStorage.getItem('userId'));
+        workout.userId=parseInt(localStorage.getItem('userId') || '0');
+
+        let workOutModelPromise=await workoutService.saveWorkout(workout);
+        if (!workOutModelPromise) {
+          throw new Error('Failed to save workout');
+        }
+        console.log(workOutModelPromise);
+      }catch(error){
+        console.error('Failed to save user:', error);
+      }
     }
     
-    setNewWorkout({ type: '', duration: '', calories: '', date: '' });
+    setNewWorkout({ id: 0, type: '', duration: '', calories: '', date: '' });
     setIsFormVisible(false);
   };
 
-  const handleEdit = (index: number) => {
+  const handleEdit = async (index: number) => {
     setNewWorkout(workouts[index]);
     setEditIndex(index);
     setIsFormVisible(true);
   };
 
-  const handleDelete = (index: number) => {
-    const updatedWorkouts = workouts.filter((_, i) => i !== index);
+  const handleDelete = async (id: number) => {
+    const updatedWorkouts = workouts.filter((_, i) => i !== id);
     setWorkouts(updatedWorkouts);
+    await workoutService.deleteWorkout(id);
+    fetchWorkouts();
   };
 
   return (
